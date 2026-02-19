@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Coton-Tige ULTIME - Arcade Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;text-align:center;
+background:linear-gradient(45deg,#ff9a9e,#fad0c4,#a1c4fd,#c2e9fb);background-size:400% 400%;
+animation:bgMove 8s infinite alternate;}
+@keyframes bgMove{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+canvas{display:block;margin:auto;}
+#ui{position:absolute;top:10px;width:100%;color:white;font-weight:bold;text-shadow:2px 2px 5px black;}
+button,select{padding:6px 12px;border-radius:10px;border:none;margin:4px;cursor:pointer;}
+#options{margin-top:10px;}
+#message{font-size:32px;animation:none;}
+.pulse{animation:pulse 0.7s infinite alternate;}
+@keyframes pulse{0%{transform:scale(1);}100%{transform:scale(1.2);}}
+</style>
+</head>
+<body>
+<div id="ui">
+Score : <span id="score">0</span> |
+Best : <span id="best">0</span><br>
+<div id="menu">
+<button onclick="setDifficulty('easy')">Facile</button>
+<button onclick="setDifficulty('medium')">Moyen</button>
+<button onclick="setDifficulty('hard')">Difficile</button><br>
+<select id="skinSelect">
+<option value="white">Blanc</option>
+<option value="pink">Rose</option>
+<option value="cyan">Cyan</option>
+<option value="gold">Or</option>
+<option value="purple">Violet</option>
+</select>
+</div>
+<div id="options" style="display:none;">
+<button onclick="togglePause()">Pause</button>
+<button onclick="toggleMusic()">🔊</button>
+</div>
+<div id="message"></div>
+</div>
+<canvas id="gameCanvas"></canvas>
+<audio id="bgMusic" loop>
+<source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8a4d4c6c0.mp3?filename=arcade-music-loop-110624.mp3">
+</audio>
+<audio id="jumpSound"><source src="https://freesound.org/data/previews/514/514632_10226578-lq.mp3"></audio>
+<audio id="powerUpSound"><source src="https://freesound.org/data/previews/256/256113_3263906-lq.mp3"></audio>
+<audio id="explosionSound"><source src="https://freesound.org/data/previews/348/348204_3248242-lq.mp3"></audio>
+<script>
+const canvas=document.getElementById("gameCanvas"), ctx=canvas.getContext("2d");
+function resizeCanvas(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+resizeCanvas(); window.addEventListener('resize',resizeCanvas);
+
+let gravity=0.6, gameOver=true, paused=false, score=0, bestScore=localStorage.getItem("best")||0;
+document.getElementById("best").innerText=bestScore;
+let speed=5, fireChance=0.2, superMode=false, bossActive=false, musicOn=true, bossDir=1, level=1;
+let powerUps=[], projectiles=[], combo=1, particles=[];
+
+const cotton={x:150,y:canvas.height/2,width:20,height:60,velocityY:0,jumpPower:-12,color:"white",shield:false,scoreMultiplier:1,speedBoost:false};
+let vines=[],explosionParticles=[],boss=null;
+const colors=["red","orange","yellow","green","blue","indigo","violet"];
+const bgMusic=document.getElementById("bgMusic");
+const jumpSound=document.getElementById("jumpSound");
+const powerUpSound=document.getElementById("powerUpSound");
+const explosionSound=document.getElementById("explosionSound");
+
+// ----- Difficulty -----
+function setDifficulty(level){
+  if(level==="easy"){speed=3;fireChance=0.1;}
+  if(level==="medium"){speed=5;fireChance=0.2;}
+  if(level==="hard"){speed=7;fireChance=0.3;}
+  cotton.color=document.getElementById("skinSelect").value;
+  document.getElementById("menu").style.display="none";
+  document.getElementById("options").style.display="block";
+  restartGame();
+}
+
+// ----- Vines & Boss -----
+function createVine(x){ vines.push({x:x,y:Math.random()*(canvas.height-200)+50,width:20,height:200,color:colors[Math.floor(Math.random()*colors.length)],burning:Math.random()<fireChance,sparks:[],passed:false}); }
+function createBoss(){ boss={x:canvas.width+200,y:canvas.height/2-100,width:150,height:150,health:10,attackTimer:0}; bossActive=true; }
+
+// ----- Power-Ups -----
+function spawnPowerUp(){
+  const types=["shield","score","speed"];
+  const type=types[Math.floor(Math.random()*types.length)];
+  powerUps.push({x:canvas.width+50,y:50+Math.random()*(canvas.height-150),size:30,type:type});
+}
+function collectPowerUp(p){
+  powerUpSound.play().catch(()=>{});
+  if(p.type==="shield"){cotton.shield=true; setTimeout(()=>cotton.shield=false,5000);}
+  if(p.type==="score"){cotton.scoreMultiplier=2; setTimeout(()=>cotton.scoreMultiplier=1,5000);}
+  if(p.type==="speed"){cotton.speedBoost=true; setTimeout(()=>cotton.speedBoost=false,5000);}
+}
+
+// ----- Background particles -----
+function spawnParticles(){for(let i=0;i<5;i++){particles.push({x:Math.random()*canvas.width,y:Math.random()*canvas.height,dx:0,dy:Math.random()*1+0.5,radius:Math.random()*2+1,color:colors[Math.floor(Math.random()*colors.length)]});}}
+function drawParticles(){particles.forEach(p=>{ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.radius,0,Math.PI*2);ctx.fill();p.y+=p.dy;if(p.y>canvas.height)p.y=0;p.x+=p.dx;});}
+
+// ----- Draw -----
+function drawCotton(){if(superMode){ctx.shadowColor="yellow";ctx.shadowBlur=25;} ctx.fillStyle=cotton.color; ctx.fillRect(cotton.x,cotton.y,cotton.width,cotton.height); ctx.shadowBlur=0; // trail
+particles.push({x:cotton.x+cotton.width/2,y:cotton.y+cotton.height/2,dx:(Math.random()-0.5)*2,dy:(Math.random()-0.5)*2,radius:3,color:"white"});}
+
+function drawVines(){ctx.font="25px Arial";ctx.textAlign="center"; vines.forEach(v=>{ctx.fillStyle=v.burning?"orange":v.color; ctx.fillRect(v.x,v.y,v.width,v.height); if(v.burning){if(Math.random()<0.2) v.sparks.push({x:v.x+10,y:v.y+Math.random()*v.height,dx:(Math.random()-0.5)*2,dy:-Math.random()*2,life:10}); ctx.fillText("🔥",v.x+v.width/2,v.y-10); v.sparks.forEach(s=>{ctx.fillStyle="yellow";ctx.fillRect(s.x,s.y,2,2);s.x+=s.dx;s.y+=s.dy;s.life--;}); v.sparks=v.sparks.filter(s=>s.life>0);}});}
+function drawPowerUps(){ctx.font="30px Arial"; ctx.textAlign="center"; powerUps.forEach(p=>{ctx.fillStyle="cyan"; if(p.type==="shield") ctx.fillText("🛡️",p.x,p.y); if(p.type==="score") ctx.fillText("✨",p.x,p.y); if(p.type==="speed") ctx.fillText("⚡",p.x,p.y); p.x-=speed;}); powerUps=powerUps.filter(p=>p.x>0);}
+function drawBoss(){if(!bossActive) return; ctx.fillStyle="darkred"; ctx.fillRect(boss.x,boss.y,boss.width,boss.height); ctx.fillStyle="black"; ctx.font="60px Arial"; ctx.fillText("👾",boss.x+boss.width/2,boss.y+boss.height*0.7+Math.sin(Date.now()/150)*15); boss.x-=speed; boss.y+=bossDir*0.5; if(boss.y<50||boss.y>canvas.height-200) bossDir*=-1;
+boss.attackTimer++; if(boss.attackTimer%100===0){projectiles.push({x:boss.x,y:boss.y+boss.height/2,dx:-6,dy:0}); projectiles.push({x:boss.x,y:boss.y+boss.height/2,dx:-5,dy:-3}); projectiles.push({x:boss.x,y:boss.y+boss.height/2,dx:-5,dy:3});}
+projectiles.forEach(pr=>{ctx.fillStyle="red";ctx.fillRect(pr.x,pr.y,10,10); pr.x+=pr.dx; pr.y+=pr.dy; if(pr.x<0||pr.y<0||pr.y>canvas.height) projectiles.shift(); if(collision(pr,cotton)&&!cotton.shield) endGame();});}
+
+function createExplosion(){explosionSound.play().catch(()=>{}); for(let i=0;i<80;i++){explosionParticles.push({x:cotton.x+cotton.width/2,y:cotton.y+cotton.height/2,dx:(Math.random()-0.5)*12,dy:(Math.random()-0.5)*12,life:50,color:colors[Math.floor(Math.random()*colors.length)]});}}
+function drawExplosion(){explosionParticles.forEach(p=>{ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,5,5);p.x+=p.dx;p.y+=p.dy;p.life--;}); explosionParticles=explosionParticles.filter(p=>p.life>0);}
+
+// ----- Collision -----
+function collision(a,b){return a.x<b.x+b.width && a.x+a.width>b.x && a.y<b.y+b.height && a.y+a.height>b.y;}
+
+// ----- Update -----
+function update(){
+  if(gameOver||paused) return;
+  cotton.velocityY+=gravity; cotton.y+=cotton.velocityY;
+  vines.forEach(v=>{v.x-=speed; if(!v.passed&&v.x+v.width<cotton.x){score+=cotton.scoreMultiplier;document.getElementById("score").innerText=score;v.passed=true; levelUp();} if(collision(v,cotton)&&v.burning&&!cotton.shield&&!superMode) endGame();});
+  if(cotton.y>canvas.height) endGame();
+  if(vines.length===0||vines[vines.length-1].x<canvas.width-200) createVine(canvas.width+100);
+  if(vines[0]&&vines[0].x<-50) vines.shift();
+  powerUps.forEach(p=>{if(collision(p,cotton)){collectPowerUp(p); powerUps.splice(powerUps.indexOf(p),1);}});
+  spawnParticles();
+}
+
+// ----- Levels & Progression -----
+function levelUp(){if(score%10===0){speed+=0.5; fireChance+=0.02; createBoss(); if(Math.random()<0.5) spawnPowerUp();}}
+
+// ----- Game Over & Restart -----
+function endGame(){gameOver=true; paused=false; createExplosion(); document.getElementById("message").innerText="💥 Perdu ! Tape pour recommencer"; document.getElementById("message").classList.add("pulse"); if(score>bestScore){bestScore=score; localStorage.setItem("best",bestScore); document.getElementById("best").innerText=bestScore;}}
+function restartGame(){cotton.y=canvas.height/2; cotton.velocityY=0; vines=[]; explosionParticles=[]; powerUps=[]; projectiles=[]; particles=[]; score=0; superMode=false; bossActive=false; level=1; combo=1; document.getElementById("score").innerText=score; document.getElementById("message").innerText=""; document.getElementById("message").classList.remove("pulse"); gameOver=false; paused=false; for(let i=0;i<5;i++) createVine(400+i*200); if(musicOn) bgMusic.play().catch(()=>{});}
+
+// ----- Pause / Music -----
+function togglePause(){if(gameOver) return; paused=!paused; document.getElementById("message").innerText=paused?"⏸️ Pause":"";}
+function toggleMusic(){musicOn=!musicOn; if(musicOn) bgMusic.play().catch(()=>{}); else bgMusic.pause();}
+
+// ----- Loop -----
+function gameLoop(){ctx.clearRect(0,0,canvas.width,canvas.height); drawParticles(); drawCotton(); drawVines(); drawPowerUps(); drawBoss(); drawExplosion(); update(); requestAnimationFrame(gameLoop);}
+
+// ----- Input -----
+document.addEventListener("keydown",e=>{if(e.code==="Space"){if(gameOver) restartGame(); else if(!paused) {cotton.velocityY=cotton.jumpPower; jumpSound.play().catch(()=>{});}} if(e.code==="KeyP") togglePause();});
+canvas.addEventListener("touchstart",()=>{if(gameOver) restartGame(); else if(!paused) {cotton.velocityY=cotton.jumpPower; jumpSound.play().catch(()=>{});}});
+canvas.addEventListener("click",()=>{if(gameOver) restartGame(); else if(!paused) {cotton.velocityY=cotton.jumpPower; jumpSound.play().catch(()=>{});}});
+
+gameLoop();
+</script>
+</body>
+</html>
