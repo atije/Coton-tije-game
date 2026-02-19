@@ -1,0 +1,255 @@
+index.html
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Coton-Tige ULTIME</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{
+margin:0;
+overflow:hidden;
+font-family:Arial;
+text-align:center;
+background:linear-gradient(45deg,#ff9a9e,#fad0c4,#a1c4fd,#c2e9fb);
+background-size:400% 400%;
+animation:bgMove 8s infinite alternate;
+}
+@keyframes bgMove{
+0%{background-position:0% 50%}
+100%{background-position:100% 50%}
+}
+canvas{display:block;margin:auto;}
+#ui{
+position:absolute;
+top:10px;
+width:100%;
+color:white;
+font-weight:bold;
+text-shadow:2px 2px 5px black;
+}
+button,select{
+padding:6px 12px;
+border-radius:10px;
+border:none;
+margin:4px;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+Score : <span id="score">0</span> |
+Best : <span id="best">0</span><br>
+<div id="menu">
+<button onclick="setDifficulty('easy')">Facile</button>
+<button onclick="setDifficulty('medium')">Medium</button>
+<button onclick="setDifficulty('hard')">Hard</button><br>
+<select id="skinSelect">
+<option value="white">Blanc</option>
+<option value="pink">Rose</option>
+<option value="cyan">Cyan</option>
+<option value="gold">Or</option>
+<option value="purple">Violet</option>
+</select>
+</div>
+<div id="message"></div>
+</div>
+<canvas id="gameCanvas"></canvas>
+<audio id="bgMusic" loop>
+<source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8a4d4c6c0.mp3?filename=arcade-music-loop-110624.mp3">
+</audio>
+<script>
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+canvas.width=window.innerWidth;
+canvas.height=window.innerHeight;
+let gravity=0.6;
+let gameOver=true;
+let score=0;
+let bestScore=localStorage.getItem("best")||0;
+document.getElementById("best").innerText=bestScore;
+let speed=5;
+let fireChance=0.2;
+let superMode=false;
+let bossActive=false;
+const cotton={
+x:150,
+y:canvas.height/2,
+width:20,
+height:60,
+velocityY:0,
+jumpPower:-12,
+color:"white"
+};
+let vines=[];
+let explosionParticles=[];
+let boss=null;
+const colors=["red","orange","yellow","green","blue","indigo","violet"];
+function setDifficulty(level){
+if(level==="easy"){speed=3;fireChance=0.1;}
+if(level==="medium"){speed=5;fireChance=0.2;}
+if(level==="hard"){speed=8;fireChance=0.4;}
+cotton.color=document.getElementById("skinSelect").value;
+document.getElementById("menu").style.display="none";
+document.getElementById("bgMusic").play();
+restartGame();
+}
+function createVine(x){
+vines.push({
+x:x,
+y:Math.random()*(canvas.height-200)+50,
+width:20,
+height:200,
+color:colors[Math.floor(Math.random()*colors.length)],
+burning:Math.random()<fireChance,
+passed:false
+});
+}
+function createBoss(){
+boss={
+x:canvas.width+200,
+y:canvas.height/2-100,
+width:150,
+height:150,
+health:10
+};
+bossActive=true;
+}
+function drawCotton(){
+if(superMode){
+ctx.shadowColor="yellow";
+ctx.shadowBlur=20;
+}
+ctx.fillStyle=cotton.color;
+ctx.fillRect(cotton.x,cotton.y,cotton.width,cotton.height);
+ctx.shadowBlur=0;
+}
+function drawVines(){
+vines.forEach(v=>{
+ctx.fillStyle=v.burning?"orange":v.color;
+ctx.fillRect(v.x,v.y,v.width,v.height);
+if(v.burning){
+ctx.fillText("🔥",v.x-5,v.y-10);
+}
+});
+}
+function drawBoss(){
+if(!bossActive)return;
+ctx.fillStyle="darkred";
+ctx.fillRect(boss.x,boss.y,boss.width,boss.height);
+ctx.fillStyle="black";
+ctx.fillText("👾",boss.x+40,boss.y+90);
+boss.x-=speed;
+if(boss.x+boss.width<0) bossActive=false;
+if(
+cotton.x<boss.x+boss.width &&
+cotton.x+cotton.width>boss.x &&
+cotton.y<boss.y+boss.height &&
+cotton.y+cotton.height>boss.y
+){
+if(!superMode) endGame();
+}
+}
+function createExplosion(){
+for(let i=0;i<30;i++){
+explosionParticles.push({
+x:cotton.x,
+y:cotton.y,
+dx:(Math.random()-0.5)*6,
+dy:(Math.random()-0.5)*6,
+life:30
+});
+}
+}
+function drawExplosion(){
+explosionParticles.forEach(p=>{
+ctx.fillStyle="orange";
+ctx.fillRect(p.x,p.y,5,5);
+p.x+=p.dx;
+p.y+=p.dy;
+p.life--;
+});
+explosionParticles=explosionParticles.filter(p=>p.life>0);
+}
+function update(){
+if(gameOver)return;
+cotton.velocityY+=gravity;
+cotton.y+=cotton.velocityY;
+vines.forEach(v=>{
+v.x-=speed;
+if(!v.passed && v.x+v.width<cotton.x){
+score++;
+document.getElementById("score").innerText=score;
+v.passed=true;
+if(score==20){
+superMode=true;
+speed+=2;
+createBoss();
+}
+}
+if(
+cotton.x<v.x+v.width &&
+cotton.x+cotton.width>v.x &&
+cotton.y<v.y+v.height &&
+cotton.y+cotton.height>v.y
+){
+if(v.burning && !superMode) endGame();
+else cotton.velocityY=cotton.jumpPower;
+}
+});
+if(cotton.y>canvas.height) endGame();
+if(vines.length===0||vines[vines.length-1].x<canvas.width-200){
+createVine(canvas.width+100);
+}
+if(vines[0]&&vines[0].x<-50)vines.shift();
+}
+function endGame(){
+gameOver=true;
+createExplosion();
+if(score>bestScore){
+bestScore=score;
+localStorage.setItem("best",bestScore);
+document.getElementById("best").innerText=bestScore;
+}
+document.getElementById("message").innerText=
+"💥 Perdu ! Tape pour recommencer";
+}
+function restartGame(){
+cotton.y=canvas.height/2;
+cotton.velocityY=0;
+vines=[];
+score=0;
+superMode=false;
+bossActive=false;
+document.getElementById("score").innerText=score;
+document.getElementById("message").innerText="";
+for(let i=0;i<5;i++)createVine(400+i*200);
+gameOver=false;
+}
+function gameLoop(){
+ctx.clearRect(0,0,canvas.width,canvas.height);
+drawCotton();
+drawVines();
+drawBoss();
+drawExplosion();
+update();
+requestAnimationFrame(gameLoop);
+}
+document.addEventListener("keydown",e=>{
+if(e.code==="Space"){
+if(gameOver)restartGame();
+else cotton.velocityY=cotton.jumpPower;
+}
+});
+canvas.addEventListener("touchstart",()=>{
+if(gameOver)restartGame();
+else cotton.velocityY=cotton.jumpPower;
+});
+canvas.addEventListener("click",()=>{
+if(gameOver)restartGame();
+else cotton.velocityY=cotton.jumpPower;
+});
+gameLoop();
+</script>
+</body>
+</html>
